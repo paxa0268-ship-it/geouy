@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoUy — Dunyo Ko'chmas Mulk Xaritasi</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS & JS (API kalitsiz tezkor va ishonchli xarita) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        /* Xarita konteyneri hech qachon 0px bo'lib qolmasligi uchun qat'iy balandlik */
+        #map-wrapper {
+            position: relative;
+            width: 100%;
+            height: calc(100vh - 64px);
+            min-height: 450px;
+            background-color: #e5e7eb;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+
+        /* Google Maps / Airbnb uslubidagi narx pinlari */
+        .custom-price-pin {
+            background: transparent !important;
+            border: none !important;
+        }
+
+        .price-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #ffffff;
+            color: #0f172a;
+            border: 2px solid #2563eb;
+            border-radius: 9999px;
+            padding: 4px 10px;
+            font-weight: 800;
+            font-size: 12px;
+            line-height: 1;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+            white-space: nowrap;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+        }
+
+        .price-badge:hover, .price-badge.active {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #1d4ed8;
+            transform: translate(-50%, -55%) scale(1.12);
+            z-index: 9999 !important;
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.45);
+        }
+
+        /* Xaritadan nuqta tanlash rejimi */
+        .picking-location #map {
+            cursor: crosshair !important;
+        }
+
+        /* Maxsus scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 flex flex-col h-screen">
+
+    <!-- YUQORI PANEL (HEADER) -->
+    <header class="bg-white border-b border-slate-200 h-16 px-4 lg:px-6 flex items-center justify-between z-30 shadow-sm shrink-0">
+        <!-- Logo -->
+        <div class="flex items-center space-x-2.5 cursor-pointer" onclick="resetWorldView()">
+            <div class="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-600/25">
+                <i class="fa-solid fa-earth-americas text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-extrabold text-slate-900 leading-none">Geo<span class="text-blue-600">Uy</span></h1>
+                <p class="text-[11px] text-slate-500 font-medium hidden sm:block">Dunyo Ko'chmas Mulk Xaritasi</p>
+            </div>
+        </div>
+
+        <!-- Markaziy Navigatsiya -->
+        <nav class="flex items-center bg-slate-100 p-1 rounded-xl space-x-1">
+            <button onclick="switchMainView('map')" id="btn-view-map" class="px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-white text-blue-600 shadow-sm transition-all flex items-center space-x-1.5">
+                <i class="fa-solid fa-map-location-dot"></i>
+                <span>Xarita</span>
+            </button>
+            <button onclick="switchMainView('guide')" id="btn-view-guide" class="px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center space-x-1.5">
+                <i class="fa-solid fa-file-shield"></i>
+                <span>Uy sotish hujjatlari</span>
+            </button>
+        </nav>
+
+        <!-- O'ng taraf tugmalar -->
+        <div class="flex items-center space-x-2">
+            <button onclick="openAddPropertyModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl font-semibold text-xs sm:text-sm shadow-md shadow-blue-600/20 transition-all flex items-center space-x-1.5">
+                <i class="fa-solid fa-plus"></i>
+                <span>Uy qo'shish</span>
+            </button>
+            <button onclick="downloadStandaloneHTML()" title="Saytni kompyuterga HTML fayl sifatida yuklab olish" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl font-semibold text-xs sm:text-sm transition-all flex items-center space-x-1.5 border border-slate-200">
+                <i class="fa-solid fa-download text-blue-600"></i>
+                <span class="hidden md:inline">Faylni yuklab olish (.html)</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ASOSIY QISM -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- 1-BO'LIM: XARITA VA UYLAR RO'YXATI -->
+        <div id="view-map-container" class="flex-1 flex flex-col md:flex-row w-full h-full">
+            
+            <!-- Chap Yon Panel (Filtrlar va E'lonlar) -->
+            <aside id="sidebar-panel" class="w-full md:w-[390px] lg:w-[430px] bg-white border-r border-slate-200 flex flex-col h-[42vh] md:h-full z-20 shrink-0">
+                
+                <!-- Qidiruv va Filtrlar -->
+                <div class="p-3.5 border-b border-slate-200 bg-white space-y-2.5 shrink-0">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input type="text" id="searchInput" oninput="applyFilters()" placeholder="Shahar, davlat yoki uy nomi (masalan: Toshkent, Dubay)..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500">
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                        <select id="typeFilter" onchange="applyFilters()" class="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-500">
+                            <option value="">Barcha turlar</option>
+                            <option value="Kvartira">Kvartira</option>
+                            <option value="Hovli">Hovli / Uy</option>
+                            <option value="Villa">Villa</option>
+                            <option value="Ofis">Tijorat / Ofis</option>
+                        </select>
+
+                        <select id="cityFilter" onchange="flyToSelectedCity()" class="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-500">
+                            <option value="">Dunyo bo'ylab</option>
+                            <option value="Toshkent">Toshkent</option>
+                            <option value="Samarqand">Samarqand</option>
+                            <option value="Dubay">Dubay</option>
+                            <option value="Istanbul">Istanbul</option>
+                            <option value="London">London</option>
+                            <option value="New York">New York</option>
+                            <option value="Tokio">Tokio</option>
+                            <option value="Seul">Seul</option>
+                            <option value="Olmaota">Olmaota</option>
+                            <option value="Moskva">Moskva</option>
+                        </select>
+
+                        <select id="priceFilter" onchange="applyFilters()" class="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-500">
+                            <option value="999999999">Har qanday narx</option>
+                            <option value="150000">$150,000 gacha</option>
+                            <option value="400000">$400,000 gacha</option>
+                            <option value="1000000">$1,000,000 gacha</option>
+                            <option value="3000000">$3,000,000 gacha</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                        <span id="resultsCount" class="font-semibold text-slate-700">Topildi: 10 ta uy</span>
+                        <button onclick="resetAllFilters()" class="text-blue-600 font-semibold hover:underline">Tozalash</button>
+                    </div>
+                </div>
+
+                <!-- Uylar Ro'yxati -->
+                <div id="propertyList" class="flex-1 overflow-y-auto p-3.5 space-y-3 bg-slate-50">
+                    <!-- Dinamik kartochkalar -->
+                </div>
+            </aside>
+
+            <!-- O'ng Tomon: Xarita Konteyneri -->
+            <main id="map-wrapper" class="flex-1 h-[58vh] md:h-full">
+                <div id="map"></div>
+
+                <!-- Xaritadan joy tanlash xabarnomasi (Faqat joy tanlash yoqilganda chiqadi) -->
+                <div id="pickLocationBanner" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-blue-600 text-white px-5 py-2.5 rounded-2xl shadow-xl flex items-center space-x-3 border-2 border-white">
+                    <i class="fa-solid fa-location-crosshairs animate-bounce"></i>
+                    <span class="text-xs sm:text-sm font-bold">Xaritada uy joylashgan nuqtani bosing!</span>
+                    <button onclick="cancelMapPick()" class="bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-xs font-semibold">Bekor qilish</button>
+                </div>
+
+                <!-- Google Maps uslubidagi Xarita / Sun'iy yo'ldosh almashtirgich -->
+                <div class="absolute top-3 left-3 z-20 bg-white rounded-xl shadow-lg border border-slate-200 p-1 flex items-center space-x-1">
+                    <button id="layer-street-btn" onclick="setMapLayer('street')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white transition-all flex items-center space-x-1.5">
+                        <i class="fa-solid fa-map"></i>
+                        <span>Xarita</span>
+                    </button>
+                    <button id="layer-satellite-btn" onclick="setMapLayer('satellite')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all flex items-center space-x-1.5">
+                        <i class="fa-solid fa-satellite"></i>
+                        <span>Sun'iy yo'ldosh</span>
+                    </button>
+                </div>
+
+                <!-- Tezkor Shaharlarga Uchish Tugmalari -->
+                <div class="absolute bottom-5 left-3 right-14 z-20 flex items-center space-x-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    <button onclick="resetWorldView()" class="bg-white/95 hover:bg-white text-slate-800 px-3 py-1.5 rounded-full text-xs font-bold shadow-md border border-slate-200 shrink-0 transition-all">
+                        🌍 Butun dunyo
+                    </button>
+                    <button onclick="flyToCoords(41.3111, 69.2797, 12)" class="bg-white/95 hover:bg-white text-slate-800 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md border border-slate-200 shrink-0 transition-all">
+                        🇺🇿 Toshkent
+                    </button>
+                    <button onclick="flyToCoords(39.6542, 66.9597, 13)" class="bg-white/95 hover:bg-white text-slate-800 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md border border-slate-200 shrink-0 transition-all">
+                        🇺🇿 Samarqand
+                    </button>
+                    <button onclick="flyToCoords(25.1972, 55.2744, 12)" class="bg-white/95 hover:bg-white text-slate-800 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md border border-slate-200 shrink-0 transition-all">
+                        🇦🇪 Dubay
+                    </button>
+                    <button onclick="flyToCoords(41.0082, 28.9784, 12)" class="bg-white/95 hover:bg-white text-slate-800 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md border border-slate-200 shrink-0 transition-all">
+                        🇹🇷 Istanbul
+                    </button>
+                    <button onclick="flyToCoords(51.5074, -0.1278, 12)" class="bg-white/95 hover:bg-white text-slate-800 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md border border-slate-200 shrink-0 transition-all">
+                        🇬🇧 London
+                    </button>
+                    <button onclick="flyToCoords(40.7580, -73.9855, 12)" class="bg-white/95 hover:bg-white text-slate-800 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md border border-slate-200 shrink-0 transition-all">
+                        🇺🇸 New York
+                    </button>
+                </div>
+
+                <!-- Offline / Vektor Xarita Zaxira Canvas (Faqat internet umuman yo'q bo'lganda foydalanuvchi yoqishi mumkin) -->
+                <div id="offlineVectorFallback" class="hidden absolute inset-0 bg-sky-100 z-15 flex flex-col items-center justify-center p-6">
+                    <div class="bg-white p-6 rounded-3xl shadow-xl max-w-md text-center space-y-3 border border-slate-200">
+                        <i class="fa-solid fa-wifi text-3xl text-amber-500"></i>
+                        <h3 class="font-bold text-slate-900">Xarita qatlami yuklanmoqda</h3>
+                        <p class="text-xs text-slate-600">Agar internet sekin bo'lsa, quyidagi tugma orqali xaritani qayta yuklang yoki chap tarafdagi ro'yxatdan barcha uylarni ko'ring.</p>
+                        <button onclick="reloadMapTiles()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold">Xaritani qayta yuklash</button>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- 2-BO'LIM: UY SOTISH UCHUN KERAKLI BARCHA MA'LUMOTLAR VA HUJJATLAR -->
+        <div id="view-guide-container" class="hidden flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-8 z-20">
+            <div class="max-w-4xl mx-auto space-y-6 pb-12">
+                
+                <!-- Sarlavha Banner -->
+                <div class="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div class="space-y-2">
+                        <span class="inline-block bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">To'liq Huquqiy Qo'llanma</span>
+                        <h2 class="text-2xl sm:text-3xl font-extrabold">Uy Sotishda Kerak Bo'ladigan Barcha Ma'lumotlar va Hujjatlar</h2>
+                        <p class="text-blue-100 text-xs sm:text-sm max-w-2xl">
+                            Notarial oldi-sotdi shartnomasini muammosiz rasmiylashtirish uchun tayyorlanishi shart bo'lgan hujjatlar ro'yxati (interaktiv belgilash imkoniyati bilan).
+                        </p>
+                    </div>
+                    <button onclick="window.print()" class="bg-white text-blue-700 hover:bg-blue-50 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-md shrink-0 flex items-center space-x-2">
+                        <i class="fa-solid fa-print"></i>
+                        <span>Ro'yxatni chop etish</span>
+                    </button>
+                </div>
+
+                <!-- Tayyorgarlik Progress Bari -->
+                <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-2">
+                    <div class="flex items-center justify-between text-xs sm:text-sm font-bold">
+                        <span class="text-slate-700">Hujjatlar tayyorlik darajasi (belgilab boring):</span>
+                        <span id="checklistProgressText" class="text-blue-600">0 / 9 tayyor</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div id="checklistProgressBar" class="h-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 1. Mulk va Kadastr Hujjatlari -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex items-center space-x-3 border-b border-slate-100 pb-3">
+                        <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-file-contract text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-slate-900">1. Mulk huquqi va Kadastr hujjatlari</h3>
+                            <p class="text-xs text-slate-500">Uyning sizga tegishli ekanligini isbotlovchi asosiy hujjatlar</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Kadastr pasporti (Yangi namunadagi ID-karta yoki kadastr yig'majildi)</span>
+                                <span class="text-xs text-slate-600">Ko'chmas mulkning umumiy maydoni, xonalar soni, chegaralari va kadastr raqami ko'rsatilgan hujjat.</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Mulk huquqini tasdiqlovchi asosiy hujjat</span>
+                                <span class="text-xs text-slate-600">Avvalgi oldi-sotdi shartnomasi, hadya shartnomasi, meros guvohnomasi, xususiylashtirish orderi yoki hokim qarori.</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Davlat reyestridan ko'chirma (Taqiq yo'qligi haqida)</span>
+                                <span class="text-xs text-slate-600">Uy garovda emasligi, xatlanmaganligi va sotishga taqiq yo'qligini tasdiqlovchi kadastr ko'chirmasi (notarius tizim orqali ham tekshiradi).</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 2. Oila a'zolari va Propiska Hujjatlari -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex items-center space-x-3 border-b border-slate-100 pb-3">
+                        <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-users text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-slate-900">2. Shaxsiy va Oila a'zolari roziligi hujjatlari</h3>
+                            <p class="text-xs text-slate-500">Keyinchalik nizolar kelib chiqmasligi uchun majburiy hujjatlar</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Mulkdor va xaridorning Pasporti / ID kartasi</span>
+                                <span class="text-xs text-slate-600">Amaldagi shaxsni tasdiqlovchi hujjatlarning asl nusxasi.</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Nikoh guvohnomasi va Turmush o'rtog'ining notarial roziligi</span>
+                                <span class="text-xs text-slate-600">Agar uy nikoh davomida sotib olingan bo'lsa, turmush o'rtog'i notariusga kelishi yoki notarial rozilik xati taqdim etishi shart.</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Doimiy ro'yxatda (propiskada) turganlar haqida ma'lumotnoma (my.gov.uz)</span>
+                                <span class="text-xs text-slate-600">Uyda ro'yxatda turgan barcha voyaga yetgan shaxslarning roziligi yoki ularning ro'yxatdan chiqarilganligi haqida ma'lumot.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 3. Kommunal va Soliq Qarzdorligi -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex items-center space-x-3 border-b border-slate-100 pb-3">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-receipt text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-slate-900">3. Kommunal to'lovlar va Soliq ma'lumotnomalari</h3>
+                            <p class="text-xs text-slate-500">Qarzdorlik yo'qligini tasdiqlovchi elektron ma'lumotnomalar</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Elektr energiyasi va Tabiiy gazdan qarzdorlik yo'qligi</span>
+                                <span class="text-xs text-slate-600">Hisoblagich ko'rsatkichlari yopilganligi va qarzdorlik nol ekanligi haqida ma'lumotnoma.</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Ichimlik suvi, Issiq suv (issiqlik quvvati) va Chiqindi to'lovlari</span>
+                                <span class="text-xs text-slate-600">Suvsoz, issiqlik tarmoqlari va Toza hudud / Maxsustransdan qarzdorlik yo'qligi haqida ma'lumot.</span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start space-x-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" onchange="updateChecklistProgress()" class="doc-check mt-1 w-4 h-4 text-blue-600 rounded border-slate-300">
+                            <div>
+                                <span class="font-bold text-slate-900 text-sm block">Mol-mulk va Yer solig'idan qarzdorlik yo'qligi</span>
+                                <span class="text-xs text-slate-600">Davlat soliq inspeksiyasi bazasi orqali mulk va yer soliqlari to'liq to'langanligi haqida ma'lumotnoma.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 4. Sotish bosqichlari -->
+                <div class="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 space-y-4">
+                    <h3 class="text-lg font-extrabold flex items-center space-x-2">
+                        <i class="fa-solid fa-route text-blue-400"></i>
+                        <span>Uy sotishning 5 ta xavfsiz qadami</span>
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 text-xs">
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700 space-y-1">
+                            <span class="text-blue-400 font-extrabold">1-QADAM</span>
+                            <p class="font-bold text-white">Bozor bahosini aniqlash</p>
+                            <p class="text-slate-400">Xaritadagi qo'shni uylar narxi bilan solishtiring.</p>
+                        </div>
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700 space-y-1">
+                            <span class="text-blue-400 font-extrabold">2-QADAM</span>
+                            <p class="font-bold text-white">E'lon joylashtirish</p>
+                            <p class="text-slate-400">Aniq koordinata, xonalar soni va sifatli rasmlar qo'ying.</p>
+                        </div>
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700 space-y-1">
+                            <span class="text-blue-400 font-extrabold">3-QADAM</span>
+                            <p class="font-bold text-white">Zakalat (Avans) kelishuvi</p>
+                            <p class="text-slate-400">Xaridor bilan muddat va narxni yozma kelishib oling.</p>
+                        </div>
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700 space-y-1">
+                            <span class="text-blue-400 font-extrabold">4-QADAM</span>
+                            <p class="font-bold text-white">Notarial shartnoma</p>
+                            <p class="text-slate-400">Barcha hujjatlar bilan notariusda oldi-sotdi imzolang.</p>
+                        </div>
+                        <div class="bg-slate-800 p-3.5 rounded-2xl border border-slate-700 space-y-1">
+                            <span class="text-blue-400 font-extrabold">5-QADAM</span>
+                            <p class="font-bold text-white">Kadastr qayta ro'yxati</p>
+                            <p class="text-slate-400">Yangi egasi nomiga kadastr hujjati rasmiylashtiriladi.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- UY TAFSILOTLARI MODALI -->
+    <div id="detailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200" id="detailModalContent">
+            <!-- Dinamik to'ldiriladi -->
+        </div>
+    </div>
+
+    <!-- YANGI UY QO'SHISH MODALI -->
+    <div id="addModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-3xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 p-6 space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                        <i class="fa-solid fa-house-medical"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-extrabold text-slate-900">Yangi Uy Sotuvga Qo'yish</h3>
+                        <p class="text-xs text-slate-500">Ma'lumotlarni kiriting va xaritada joylashtiring</p>
+                    </div>
+                </div>
+                <button onclick="closeAddPropertyModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="addPropertyForm" onsubmit="saveNewProperty(event)" class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">E'lon sarlavhasi *</label>
+                    <input type="text" id="inputTitle" required placeholder="Masalan: Yunusobodda 4 xonali zamonaviy hovli" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Narxi (AQSh dollari $) *</label>
+                        <input type="number" id="inputPrice" required min="1000" placeholder="145000" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Mulk turi *</label>
+                        <select id="inputType" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                            <option value="Kvartira">Kvartira</option>
+                            <option value="Hovli">Hovli / Uy</option>
+                            <option value="Villa">Villa</option>
+                            <option value="Ofis">Tijorat / Ofis</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Shahar *</label>
+                        <input type="text" id="inputCity" required value="Toshkent" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Xonalar soni *</label>
+                        <input type="number" id="inputRooms" required min="1" value="3" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Maydoni (m²) *</label>
+                        <input type="number" id="inputArea" required min="10" value="110" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <!-- Koordinatalar va Xaritadan tanlash tugmasi -->
+                <div class="p-3 bg-blue-50/70 rounded-2xl border border-blue-100 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-blue-900">Xaritadagi aniq joylashuvi:</span>
+                        <button type="button" onclick="startMapLocationPick()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center space-x-1 shadow-sm">
+                            <i class="fa-solid fa-location-dot"></i>
+                            <span>Xaritadan nuqtani tanlash</span>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600">Kenglik (Latitude)</label>
+                            <input type="number" step="any" id="inputLat" required value="41.3250" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600">Uzunlik (Longitude)</label>
+                            <input type="number" step="any" id="inputLng" required value="69.2850" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Sotuvchi telefoni / Telegram *</label>
+                        <input type="text" id="inputContact" required placeholder="+998 90 123 45 67" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Manzil / Mo'ljal</label>
+                        <input type="text" id="inputAddress" placeholder="Yunusobod 4-kvartal" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Uy haqida qo'shimcha ma'lumot *</label>
+                    <textarea id="inputDesc" rows="2" required placeholder="Ta'miri, jihozlari, hujjatlari tayyorligi haqida yozing..." class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"></textarea>
+                </div>
+
+                <div class="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeAddPropertyModal()" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-100">Bekor qilish</button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20">E'lonni Joylash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- XABARNOMA (TOAST) -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 border border-slate-700">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+            <p id="toastMessage" class="text-xs sm:text-sm font-semibold"></p>
+        </div>
+    </div>
+
+    <script>
+        // 1. BUTUN DUNYO BO'YLAB SINOV UYLARI MA'LUMOTLAR BAZASI
+        let properties = [
+            {
+                id: 1,
+                title: "Tashkent City — Panoramali Zamonaviy Kvartira",
+                city: "Toshkent",
+                country: "O'zbekiston",
+                address: "Shayxontohur tumani, Tashkent City",
+                price: 185000,
+                type: "Kvartira",
+                rooms: 3,
+                area: 115,
+                lat: 41.3167,
+                lng: 69.2484,
+                contact: "+998 90 911 22 33 (@tashkent_realty)",
+                image: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80",
+                description: "Toshkent markazida barcha jihozlari bilan tayyor 3 xonali kvartira. Kadastr pasporti tayyor, darhol notariusga chiqish mumkin."
+            },
+            {
+                id: 2,
+                title: "Mirzo Ulug'bek — Basseynli Hashamatli Hovli",
+                city: "Toshkent",
+                country: "O'zbekiston",
+                address: "Mirzo Ulug'bek tumani, Qorasuv dahasi",
+                price: 340000,
+                type: "Hovli",
+                rooms: 6,
+                area: 320,
+                lat: 41.3345,
+                lng: 69.3452,
+                contact: "+998 97 700 55 44",
+                image: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80",
+                description: "6 sotix yer maydoniga ega 2 qavatli zamonaviy uy. Yozgi oshxona, basseyn, 3 ta mashina uchun yopiq garaj mavjud."
+            },
+            {
+                id: 3,
+                title: "Samarqand — Registon yaqinidagi Milliy-Zamonaviy Uy",
+                city: "Samarqand",
+                country: "O'zbekiston",
+                address: "Samarqand shahri, Universitet xiyoboni",
+                price: 145000,
+                type: "Hovli",
+                rooms: 5,
+                area: 210,
+                lat: 39.6542,
+                lng: 66.9597,
+                contact: "+998 91 555 12 34",
+                image: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
+                description: "Tarixiy markazga yaqin joylashgan, mehmonxona yoki oilaviy yashash uchun juda qulay ta'mirlangan hovli."
+            },
+            {
+                id: 4,
+                title: "Dubai Marina — Dengiz Manzarali Pentxaus",
+                city: "Dubay",
+                country: "BAA",
+                address: "Dubai Marina, Marina Walk",
+                price: 920000,
+                type: "Kvartira",
+                rooms: 3,
+                area: 175,
+                lat: 25.0805,
+                lng: 55.1403,
+                contact: "+971 50 456 7890",
+                image: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=800&q=80",
+                description: "Fors ko'rfaziga qaragan balkonli hashamatli kvartira. 100% xorijiy fuqarolar nomiga rasmiylashtiriladi (Freehold)."
+            },
+            {
+                id: 5,
+                title: "Istanbul — Bosfor So'hilidagi Rezidensiya",
+                city: "Istanbul",
+                country: "Turkiya",
+                address: "Besiktas, Istanbul",
+                price: 460000,
+                type: "Kvartira",
+                rooms: 4,
+                area: 160,
+                lat: 41.0422,
+                lng: 29.0067,
+                contact: "+90 532 111 22 33",
+                image: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?auto=format&fit=crop&w=800&q=80",
+                description: "Turkiya fuqaroligini olish dasturiga mos keluvchi, Tapu (kadastr) hujjati tayyor yangi xonadon."
+            },
+            {
+                id: 6,
+                title: "London — Kensington Viktorian Uyi",
+                city: "London",
+                country: "Buyuk Britaniya",
+                address: "South Kensington, London",
+                price: 1650000,
+                type: "Hovli",
+                rooms: 4,
+                area: 230,
+                lat: 51.4941,
+                lng: -0.1738,
+                contact: "+44 20 7946 0921",
+                image: "https://images.unsplash.com/photo-1518780664697-55e3ad937233?auto=format&fit=crop&w=800&q=80",
+                description: "Londonning eng nufuzli tumanlaridan birida joylashgan klassik g'ishtli shinam uy."
+            },
+            {
+                id: 7,
+                title: "New York — Manhattan Markaziy Studiya",
+                city: "New York",
+                country: "AQSh",
+                address: "Midtown Manhattan, NY",
+                price: 1150000,
+                type: "Kvartira",
+                rooms: 2,
+                area: 98,
+                lat: 40.7549,
+                lng: -73.9840,
+                contact: "+1 212 555 0198",
+                image: "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80",
+                description: "Times Square va Central Park orasidagi osmono'par binoning 34-qavatida joylashgan kvartira."
+            },
+            {
+                id: 8,
+                title: "Tokio — Shibuya Aqlli Kvartirasi",
+                city: "Tokio",
+                country: "Yaponiya",
+                address: "Shibuya-ku, Tokyo",
+                price: 680000,
+                type: "Kvartira",
+                rooms: 3,
+                area: 105,
+                lat: 35.6595,
+                lng: 139.7004,
+                contact: "+81 3 5555 0144",
+                image: "https://images.unsplash.com/photo-1502005229762-cf1b4da7c5d6?auto=format&fit=crop&w=800&q=80",
+                description: "Zilzilaga chidamli yangi binoda joylashgan, to'liq avtomatlashtirilgan yapon xonadoni."
+            },
+            {
+                id: 9,
+                title: "Seul — Gangnam Biznes Markazi Ofisi",
+                city: "Seul",
+                country: "Janubiy Koreya",
+                address: "Gangnam-gu, Seoul",
+                price: 790000,
+                type: "Ofis",
+                rooms: 5,
+                area: 190,
+                lat: 37.4979,
+                lng: 127.0276,
+                contact: "+82 2 555 0188",
+                image: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80",
+                description: "IT kompaniyalar yoki vakolatxonalar uchun tayyor ta'mirlangan zamonaviy ofis maydoni."
+            },
+            {
+                id: 10,
+                title: "Olmaota — Tog' Manzarali Villa",
+                city: "Olmaota",
+                country: "Qozog'iston",
+                address: "Medeu tumani, Olmaota",
+                price: 410000,
+                type: "Villa",
+                rooms: 5,
+                area: 295,
+                lat: 43.2220,
+                lng: 76.9512,
+                contact: "+7 701 555 88 99",
+                image: "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&q=80",
+                description: "Toza tog' havosi va ajoyib manzaraga ega shinam villa. Barcha hujjatlari sotuvga tayyor."
+            }
+        ];
+
+        const cityCoordinates = {
+            "Toshkent": [41.3111, 69.2797, 12],
+            "Samarqand": [39.6542, 66.9597, 13],
+            "Dubay": [25.1972, 55.2744, 11],
+            "Istanbul": [41.0082, 28.9784, 11],
+            "London": [51.5074, -0.1278, 11],
+            "New York": [40.7580, -73.9855, 11],
+            "Tokio": [35.6762, 139.6503, 11],
+            "Seul": [37.5665, 126.9780, 11],
+            "Olmaota": [43.2220, 76.8512, 12],
+            "Moskva": [55.7558, 37.6173, 11]
+        };
+
+        let map;
+        let streetLayer;
+        let satelliteLayer;
+        let markersLayerGroup;
+        let isPickingLocation = false;
+        let tempPickMarker = null;
+
+        // 2. XARITANI ISHGA TUSHIRISH
+        function initializeMap() {
+            // Butun dunyoni ko'rsatuvchi boshlang'ich nuqta
+            map = L.map('map', {
+                center: [32.0, 48.0],
+                zoom: 3,
+                minZoom: 2,
+                zoomControl: false
+            });
+
+            // Zoom tugmasini o'ng pastki burchakka qo'yish (Google Maps kabi)
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // Google Maps uslubidagi toza ko'cha xaritasi qatlami (CartoDB Voyager + OpenStreetMap fallback)
+            streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO',
+                subdomains: 'abcd',
+                maxZoom: 19
+            });
+
+            // Sun'iy yo'ldosh (Satellite) qatlami (Esri World Imagery)
+            satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '&copy; Esri World Imagery',
+                maxZoom: 19
+            });
+
+            // Agar asosiy qatlam yuklanishida xatolik bo'lsa, avtomatik OpenStreetMap standart qatlamiga o'tish
+            streetLayer.on('tileerror', function() {
+                if (!map.hasLayer(satelliteLayer)) {
+                    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap contributors',
+                        maxZoom: 19
+                    }).addTo(map);
+                }
+            });
+
+            streetLayer.addTo(map);
+
+            // Markerlar guruhi
+            markersLayerGroup = L.layerGroup().addTo(map);
+
+            // Xaritaga bosilganda koordinatani olish (uy qo'shish rejimi uchun)
+            map.on('click', function(e) {
+                if (isPickingLocation) {
+                    const lat = e.latlng.lat.toFixed(5);
+                    const lng = e.latlng.lng.toFixed(5);
+
+                    document.getElementById('inputLat').value = lat;
+                    document.getElementById('inputLng').value = lng;
+
+                    if (tempPickMarker) {
+                        map.removeLayer(tempPickMarker);
+                    }
+                    tempPickMarker = L.marker([lat, lng]).addTo(map);
+
+                    isPickingLocation = false;
+                    document.body.classList.remove('picking-location');
+                    document.getElementById('pickLocationBanner').classList.add('hidden');
+                    document.getElementById('addModal').classList.remove('hidden');
+                    showToast(`Joylashuv tanlandi: ${lat}, ${lng}`);
+                }
+            });
+
+            // Xarita o'lchamini majburiy yangilash (hech qachon kulrang/bo'sh qolmasligi uchun)
+            setTimeout(() => { map.invalidateSize(); }, 100);
+            setTimeout(() => { map.invalidateSize(); }, 600);
+
+            renderProperties(properties);
+        }
+
+        // Xarita va Sun'iy yo'ldosh ko'rinishini almashtirish
+        function setMapLayer(mode) {
+            const streetBtn = document.getElementById('layer-street-btn');
+            const satBtn = document.getElementById('layer-satellite-btn');
+
+            if (mode === 'street') {
+                if (map.hasLayer(satelliteLayer)) map.removeLayer(satelliteLayer);
+                if (!map.hasLayer(streetLayer)) map.addLayer(streetLayer);
+                streetBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white transition-all flex items-center space-x-1.5";
+                satBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all flex items-center space-x-1.5";
+            } else {
+                if (map.hasLayer(streetLayer)) map.removeLayer(streetLayer);
+                if (!map.hasLayer(satelliteLayer)) map.addLayer(satelliteLayer);
+                satBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white transition-all flex items-center space-x-1.5";
+                streetBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all flex items-center space-x-1.5";
+            }
+        }
+
+        // Narxni chiroyli formatlash ($185,000 yoki $1.2M)
+        function formatShortPrice(price) {
+            if (price >= 1000000) {
+                return '$' + (price / 1000000).toFixed(2).replace(/\.00$/, '') + 'M';
+            }
+            return '$' + price.toLocaleString('en-US');
+        }
+
+        function formatFullPrice(price) {
+            return '$' + price.toLocaleString('en-US');
+        }
+
+        // 3. XARITA MARKERLARI VA RO'YXATNI CHIZISH
+        function renderProperties(list) {
+            markersLayerGroup.clearLayers();
+            const listContainer = document.getElementById('propertyList');
+            listContainer.innerHTML = '';
+
+            document.getElementById('resultsCount').innerText = `Topildi: ${list.length} ta uy`;
+
+            if (list.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-10 px-4 bg-white rounded-2xl border border-slate-200">
+                        <i class="fa-solid fa-magnifying-glass text-3xl text-slate-300 mb-2"></i>
+                        <p class="font-bold text-slate-700 text-sm">Mos keluvchi uylar topilmadi</p>
+                        <p class="text-xs text-slate-500 mt-1">Boshqa shahar yoki narx oralig'ini tanlab ko'ring.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            list.forEach(item => {
+                // Xaritadagi narx pini
+                const icon = L.divIcon({
+                    className: 'custom-price-pin',
+                    html: `<div class="price-badge" id="pin-${item.id}">${formatShortPrice(item.price)}</div>`,
+                    iconSize: [0, 0]
+                });
+
+                const marker = L.marker([item.lat, item.lng], { icon: icon });
+                marker.on('click', () => {
+                    map.flyTo([item.lat, item.lng], 14, { duration: 1.1 });
+                    openPropertyDetail(item.id);
+                });
+                markersLayerGroup.addLayer(marker);
+
+                // Yon paneldagi uy kartochkasi
+                const card = document.createElement('div');
+                card.className = "bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex sm:flex-row md:flex-col group";
+                card.onmouseenter = () => {
+                    const pin = document.getElementById(`pin-${item.id}`);
+                    if (pin) pin.classList.add('active');
+                };
+                card.onmouseleave = () => {
+                    const pin = document.getElementById(`pin-${item.id}`);
+                    if (pin) pin.classList.remove('active');
+                };
+                card.onclick = () => {
+                    map.flyTo([item.lat, item.lng], 14, { duration: 1.1 });
+                    openPropertyDetail(item.id);
+                };
+
+                card.innerHTML = `
+                    <div class="relative w-32 sm:w-44 md:w-full h-32 md:h-40 shrink-0 bg-gradient-to-br from-blue-100 to-indigo-100 overflow-hidden">
+                        <img src="${item.image}" alt="${item.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.style.display='none'">
+                        <span class="absolute top-2.5 left-2.5 bg-white/95 backdrop-blur-sm text-blue-700 text-[11px] font-extrabold px-2.5 py-0.5 rounded-lg shadow-sm">
+                            ${item.type}
+                        </span>
+                        <span class="absolute bottom-2.5 right-2.5 bg-slate-900/90 text-white text-xs font-extrabold px-2.5 py-1 rounded-lg shadow">
+                            ${formatFullPrice(item.price)}
+                        </span>
+                    </div>
+                    <div class="p-3.5 flex-1 flex flex-col justify-between space-y-2">
+                        <div>
+                            <div class="flex items-center text-[11px] text-slate-500 font-semibold space-x-1">
+                                <i class="fa-solid fa-location-dot text-blue-600"></i>
+                                <span>${item.city}, ${item.country}</span>
+                            </div>
+                            <h3 class="font-bold text-slate-900 text-sm leading-snug mt-0.5 group-hover:text-blue-600 transition-colors line-clamp-1">${item.title}</h3>
+                        </div>
+                        <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-600 font-medium">
+                            <span><i class="fa-solid fa-door-open text-blue-500 mr-1"></i>${item.rooms} xona</span>
+                            <span><i class="fa-solid fa-ruler-combined text-blue-500 mr-1"></i>${item.area} m²</span>
+                            <span class="text-blue-600 font-bold text-[11px]">Batafsil →</span>
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        // 4. QIDIRUV VA FILTRLASH
+        function applyFilters() {
+            const q = document.getElementById('searchInput').value.toLowerCase().trim();
+            const type = document.getElementById('typeFilter').value;
+            const city = document.getElementById('cityFilter').value;
+            const maxPrice = Number(document.getElementById('priceFilter').value);
+
+            const filtered = properties.filter(p => {
+                const matchText = !q || p.title.toLowerCase().includes(q) || p.city.toLowerCase().includes(q) || p.country.toLowerCase().includes(q) || p.address.toLowerCase().includes(q);
+                const matchType = !type || p.type === type;
+                const matchCity = !city || p.city === city;
+                const matchPrice = p.price <= maxPrice;
+                return matchText && matchType && matchCity && matchPrice;
+            });
+
+            renderProperties(filtered);
+        }
+
+        function flyToSelectedCity() {
+            const city = document.getElementById('cityFilter').value;
+            applyFilters();
+            if (city && cityCoordinates[city]) {
+                const [lat, lng, zoom] = cityCoordinates[city];
+                map.flyTo([lat, lng], zoom, { duration: 1.2 });
+            } else if (!city) {
+                resetWorldView();
+            }
+        }
+
+        function resetAllFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('typeFilter').value = '';
+            document.getElementById('cityFilter').value = '';
+            document.getElementById('priceFilter').value = '999999999';
+            renderProperties(properties);
+            resetWorldView();
+        }
+
+        function resetWorldView() {
+            switchMainView('map');
+            map.flyTo([32.0, 48.0], 3, { duration: 1.2 });
+        }
+
+        function flyToCoords(lat, lng, zoom) {
+            map.flyTo([lat, lng], zoom, { duration: 1.2 });
+        }
+
+        // 5. UY TAFSILOTLARI MODALI
+        function openPropertyDetail(id) {
+            const item = properties.find(p => p.id === id);
+            if (!item) return;
+
+            const container = document.getElementById('detailModalContent');
+            container.innerHTML = `
+                <div class="relative h-64 bg-gradient-to-br from-blue-600 to-indigo-800">
+                    <img src="${item.image}" alt="${item.title}" class="w-full h-full object-cover" onerror="this.style.display='none'">
+                    <button onclick="closeDetailModal()" class="absolute top-4 right-4 w-9 h-9 rounded-full bg-slate-900/70 text-white hover:bg-slate-900 flex items-center justify-center transition-all">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <div class="absolute bottom-4 left-4 flex items-center space-x-2">
+                        <span class="bg-blue-600 text-white px-3 py-1 rounded-xl text-xs font-bold shadow">${item.type}</span>
+                        <span class="bg-white/95 text-slate-900 px-3 py-1 rounded-xl text-xs font-bold shadow">${item.city}, ${item.country}</span>
+                    </div>
+                </div>
+
+                <div class="p-6 space-y-5">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                            <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900">${item.title}</h2>
+                            <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-map-pin text-blue-600 mr-1"></i>${item.address} (${item.lat}, ${item.lng})</p>
+                        </div>
+                        <div class="text-2xl sm:text-3xl font-extrabold text-blue-600 shrink-0">
+                            ${formatFullPrice(item.price)}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center">
+                        <div>
+                            <span class="text-[11px] text-slate-500 font-bold uppercase block">Xonalar</span>
+                            <span class="text-base font-extrabold text-slate-900">${item.rooms} xona</span>
+                        </div>
+                        <div>
+                            <span class="text-[11px] text-slate-500 font-bold uppercase block">Umumiy maydon</span>
+                            <span class="text-base font-extrabold text-slate-900">${item.area} m²</span>
+                        </div>
+                        <div>
+                            <span class="text-[11px] text-slate-500 font-bold uppercase block">1 m² narxi</span>
+                            <span class="text-base font-extrabold text-slate-900">$${Math.round(item.price / item.area).toLocaleString()}</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Uy haqida batafsil</h4>
+                        <p class="text-sm text-slate-700 leading-relaxed">${item.description}</p>
+                    </div>
+
+                    <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div>
+                            <span class="text-[11px] font-bold text-blue-600 uppercase">Sotuvchi bilan bog'lanish</span>
+                            <p class="text-sm font-extrabold text-slate-900 mt-0.5">${item.contact}</p>
+                        </div>
+                        <div class="flex items-center space-x-2 w-full sm:w-auto">
+                            <button onclick="switchMainView('guide'); closeDetailModal();" class="flex-1 sm:flex-initial px-3.5 py-2 bg-white border border-blue-200 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all">
+                                Hujjatlar ro'yxati
+                            </button>
+                            <button onclick="showToast('Sotuvchi raqami nusxalandi: ${item.contact}')" class="flex-1 sm:flex-initial px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow transition-all">
+                                Qo'ng'iroq qilish
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('detailModal').classList.remove('hidden');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detailModal').classList.add('hidden');
+        }
+
+        // 6. YANGI UY QO'SHISH VA XARITADAN JOY TANLASH
+        function openAddPropertyModal() {
+            switchMainView('map');
+            document.getElementById('addModal').classList.remove('hidden');
+        }
+
+        function closeAddPropertyModal() {
+            document.getElementById('addModal').classList.add('hidden');
+        }
+
+        function startMapLocationPick() {
+            closeAddPropertyModal();
+            isPickingLocation = true;
+            document.body.classList.add('picking-location');
+            document.getElementById('pickLocationBanner').classList.remove('hidden');
+        }
+
+        function cancelMapPick() {
+            isPickingLocation = false;
+            document.body.classList.remove('picking-location');
+            document.getElementById('pickLocationBanner').classList.add('hidden');
+            openAddPropertyModal();
+        }
+
+        function saveNewProperty(e) {
+            e.preventDefault();
+
+            const newHome = {
+                id: Date.now(),
+                title: document.getElementById('inputTitle').value.trim(),
+                city: document.getElementById('inputCity').value.trim(),
+                country: "Yangi E'lon",
+                address: document.getElementById('inputAddress').value.trim() || document.getElementById('inputCity').value.trim(),
+                price: Number(document.getElementById('inputPrice').value),
+                type: document.getElementById('inputType').value,
+                rooms: Number(document.getElementById('inputRooms').value),
+                area: Number(document.getElementById('inputArea').value),
+                lat: parseFloat(document.getElementById('inputLat').value),
+                lng: parseFloat(document.getElementById('inputLng').value),
+                contact: document.getElementById('inputContact').value.trim(),
+                image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80",
+                description: document.getElementById('inputDesc').value.trim()
+            };
+
+            if (tempPickMarker) {
+                map.removeLayer(tempPickMarker);
+                tempPickMarker = null;
+            }
+
+            properties.unshift(newHome);
+            renderProperties(properties);
+            closeAddPropertyModal();
+            document.getElementById('addPropertyForm').reset();
+
+            map.flyTo([newHome.lat, newHome.lng], 14, { duration: 1.4 });
+            showToast("Yangi uy xaritaga muvaffaqiyatli qo'shildi!");
+        }
+
+        // 7. BO'LIMLARNI ALMASHTIRISH (XARITA / HUJJATLAR)
+        function switchMainView(view) {
+            const mapContainer = document.getElementById('view-map-container');
+            const guideContainer = document.getElementById('view-guide-container');
+            const mapBtn = document.getElementById('btn-view-map');
+            const guideBtn = document.getElementById('btn-view-guide');
+
+            if (view === 'map') {
+                mapContainer.classList.remove('hidden');
+                guideContainer.classList.add('hidden');
+                mapBtn.className = "px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-white text-blue-600 shadow-sm transition-all flex items-center space-x-1.5";
+                guideBtn.className = "px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center space-x-1.5";
+                setTimeout(() => { if (map) map.invalidateSize(); }, 150);
+            } else {
+                mapContainer.classList.add('hidden');
+                guideContainer.classList.remove('hidden');
+                guideBtn.className = "px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-white text-blue-600 shadow-sm transition-all flex items-center space-x-1.5";
+                mapBtn.className = "px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center space-x-1.5";
+            }
+        }
+
+        // Hujjatlar checklist progressi
+        function updateChecklistProgress() {
+            const checks = document.querySelectorAll('.doc-check');
+            const checkedCount = Array.from(checks).filter(c => c.checked).length;
+            const total = checks.length;
+            const pct = Math.round((checkedCount / total) * 100);
+
+            document.getElementById('checklistProgressText').innerText = `${checkedCount} / ${total} tayyor (${pct}%)`;
+            document.getElementById('checklistProgressBar').style.width = `${pct}%`;
+        }
+
+        // Tayyor HTML fayl sifatida yuklab olish funksiyasi
+        function downloadStandaloneHTML() {
+            const htmlContent = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+            const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "GeoUy_Dunyo_Kochmas_Mulk_Xaritasi.html";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("Sayt fayli (.html) kompyuteringizga yuklab olindi!");
+        }
+
+        // Xabarnoma ko'rsatish
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMessage').innerText = msg;
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3500);
+        }
+
+        // Oyna o'lchami o'zgarganda xaritani moslashtirish
+        window.addEventListener('resize', () => {
+            if (map) map.invalidateSize();
+        });
+
+        window.onload = function() {
+            initializeMap();
+        };
+    </script>
+</body>
+</html>
